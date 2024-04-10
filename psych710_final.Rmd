@@ -8,9 +8,9 @@ date: "2024-04-10"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Background
+## Background/Hypothesis
 
 
-## Hypothesis
+## Proposed Analysis
 
 
