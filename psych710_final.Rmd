@@ -1,0 +1,16 @@
+---
+title: "psych710_final"
+output: html_document
+date: "2024-04-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+
+## Hypothesis
+
+
