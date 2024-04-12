@@ -1,0 +1,84 @@
+---
+title: "psych710_final"
+output: html_document
+date: "2024-04-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(tidyverse)
+library(lme4)
+library(car)
+library(ggplot2)
+library(effects)
+library(psych)
+library(emmeans)
+library(ggeffects)
+source("610710_functions.R")
+```
+
+#Proposal
+
+## Background/Hypothesis
+The dataset that we have chosen to use is from Sparkman et al. 2022 article, "Americans experience a false social reality by underestimating popular climate policy support by nearly half." Our research question is How do socioeconomic factors predict green policy ideologies? The data that we have comes from a survey census (Ipsos eNation Omnibus) that utilizes questions for misperception for others' thoughts and behaviors by concerning climate change and support for mitigation policies, comparing with the ground truth of support of climate policies (from Yale's program on Climate Change Communication). The outcome variable, levels of support/more concern for climate policies, were measured twice with different wording. Overall, we predict that individuals' socioeconomic statuses will affect the tendency of changing levels of support/more concern for climate policies.
+
+## Proposed Analysis
+For sure, we will be using an lmer model to predict climate policy support from socioeconomic factors which takes into account the repeated measures between the two climate change/policy-related questions with different wording that these surveys were sent out. In our analysis, we will create two composite scores of climate policy support to use as our outcome variable and then use education level (USEDU3), housing status (USHOU1), and marital status (USMAR2) as our predictors. (We may also want to include employment (EMP01), but this may add too much complexity?).
+
+lmer model: lmer(green_m ~ edu + housing + marital + (1|wave))
+
+Tentatively, we also want to look at using a bayes regression model with the same setup as in our lmer setup.
+
+# Data Analysis
+
+##Read data, generate composite scores
+```{r}
+d = read.csv('41467_2022_32412_MOESM4_ESM.csv') #Read data
+
+#Generate an id variable
+d = tibble::rowid_to_column(d, "id")
+
+#Average climate score
+score1 = 
+  c('GRID_GTS1_1_GTS1', 'GRID_GTS1_2_GTS1', 'GRID_GTS1_3_GTS1', 
+    'GRID_GTS1_4_GTS1', 'GRID_GTS1_5_GTS1')
+
+score2 = 
+  c('GRID_GTS2_1_GTS2', 'GRID_GTS2_2_GTS2', 'GRID_GTS2_3_GTS2', 
+    'GRID_GTS2_4_GTS2', 'GRID_GTS2_5_GTS2')
+
+d$climate_score_1 = varScore(d, score1, Range=c(0, 100), MaxMiss=3/4, Prorate=T) / 5
+d$climate_score_2 = varScore(d, score2, Range=c(0, 100), MaxMiss=3/4, Prorate=T) / 5
+```
+
+##Clean data: 
+>>Household income(USHHI2, I guess the codebook put it wrong)
+>>Education level(USEDU3)
+
+```{r}
+#Transform to long format
+d_clean = d %>% select(id, USHHI2, USEDU3, climate_score_1 , climate_score_2)
+
+dl <- d_clean %>% as.data.table() %>% data.table::melt(
+  measure.vars =
+    list(c("climate_score_1", 'climate_score_2')), 
+  variable.name = "trial_name", 
+  value.name = "climate_tend"
+  ) %>% 
+  arrange(id) %>% as.data.frame()
+
+dl$trial_num = dplyr::recode(dl$trial_name, 
+                             "climate_score_1" = 1, "climate_score_2" = 2)
+```
+
+##Fit a mixed effect model
+```{r}
+m = lmer(climate_tend ~ USHHI2 + USEDU3 + (1|id), dl)
+m %>% summary
+Anova(m, type = 3, test = "F")
+```
