@@ -8,6 +8,7 @@ date: "2024-04-10"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
 ```{r, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
@@ -19,41 +20,20 @@ library(effects)
 library(psych)
 library(emmeans)
 library(ggeffects)
-source("610710_functions.R")
+library(bridgesampling)
+library(bayestestR)
+library(bayesplot)
+library(rstanarm)
+library(rstantools)
 ```
-
-#Proposal
-
-## Background/Hypothesis
-The dataset that we have chosen to use is from Sparkman et al. 2022 article, "Americans experience a false social reality by underestimating popular climate policy support by nearly half." Our research question is How do socioeconomic factors predict green policy ideologies? The data that we have comes from a survey census (Ipsos eNation Omnibus) that utilizes questions for misperception for others' thoughts and behaviors by concerning climate change and support for mitigation policies, comparing with the ground truth of support of climate policies (from Yale's program on Climate Change Communication). The outcome variable, levels of support/more concern for climate policies, were measured twice with different wording. Overall, we predict that individuals' socioeconomic statuses will affect the tendency of changing levels of support/more concern for climate policies.
-
-## Proposed Analysis
-For sure, we will be using an lmer model to predict climate policy support from socioeconomic factors which takes into account the repeated measures between the two climate change/policy-related questions with different wording that these surveys were sent out. In our analysis, we will create two composite scores of climate policy support to use as our outcome variable and then use education level (USEDU3), housing status (USHOU1), and marital status (USMAR2) as our predictors. (We may also want to include employment (EMP01), but this may add too much complexity?).
-
-lmer model: lmer(green_m ~ edu + housing + marital + (1|wave))
-
-Tentatively, we also want to look at using a bayes regression model with the same setup as in our lmer setup.
-
 # Data Analysis
 
 ##Read data, generate composite scores
 ```{r}
-d = read.csv('41467_2022_32412_MOESM4_ESM.csv') #Read data
+d = read.csv('full_dataset.csv') #Read data
 
 #Generate an id variable
 d = tibble::rowid_to_column(d, "id")
-
-#Average climate score
-score1 = 
-  c('GRID_GTS1_1_GTS1', 'GRID_GTS1_2_GTS1', 'GRID_GTS1_3_GTS1', 
-    'GRID_GTS1_4_GTS1', 'GRID_GTS1_5_GTS1')
-
-score2 = 
-  c('GRID_GTS2_1_GTS2', 'GRID_GTS2_2_GTS2', 'GRID_GTS2_3_GTS2', 
-    'GRID_GTS2_4_GTS2', 'GRID_GTS2_5_GTS2')
-
-d$climate_score_1 = varScore(d, score1, Range=c(0, 100), MaxMiss=3/4, Prorate=T) / 5
-d$climate_score_2 = varScore(d, score2, Range=c(0, 100), MaxMiss=3/4, Prorate=T) / 5
 ```
 
 ##Clean data: 
@@ -62,23 +42,82 @@ d$climate_score_2 = varScore(d, score2, Range=c(0, 100), MaxMiss=3/4, Prorate=T)
 
 ```{r}
 #Transform to long format
-d_clean = d %>% select(id, USHHI2, USEDU3, climate_score_1 , climate_score_2)
-
-dl <- d_clean %>% as.data.table() %>% data.table::melt(
+d_self = d %>% select(id, USHHI2, USEDU3, 
+                       GRID_GTS1_1_GTS1 , GRID_GTS1_2_GTS1, GRID_GTS1_3_GTS1, 
+                       GRID_GTS1_4_GTS1, GRID_GTS1_5_GTS1)
+d_society = d %>% select(id, USHHI2, USEDU3,
+                       GRID_GTS2_1_GTS2, GRID_GTS2_2_GTS2, GRID_GTS2_3_GTS2, 
+                       GRID_GTS2_4_GTS2, GRID_GTS2_5_GTS2)
+dl_self <- d_self %>% as.data.table() %>% data.table::melt(
   measure.vars =
-    list(c("climate_score_1", 'climate_score_2')), 
+    list(c('GRID_GTS1_1_GTS1', 'GRID_GTS1_2_GTS1', 'GRID_GTS1_3_GTS1', 
+    'GRID_GTS1_4_GTS1', 'GRID_GTS1_5_GTS1')), 
+  variable.name = "trial_name", 
+  value.name = "climate_tend"
+  ) %>% 
+  arrange(id) %>% as.data.frame()
+dl_society <- d_society %>% as.data.table() %>% data.table::melt(
+  measure.vars =
+    list(c('GRID_GTS2_1_GTS2', 'GRID_GTS2_2_GTS2', 'GRID_GTS2_3_GTS2', 
+    'GRID_GTS2_4_GTS2', 'GRID_GTS2_5_GTS2')), 
   variable.name = "trial_name", 
   value.name = "climate_tend"
   ) %>% 
   arrange(id) %>% as.data.frame()
 
-dl$trial_num = dplyr::recode(dl$trial_name, 
-                             "climate_score_1" = 1, "climate_score_2" = 2)
+#Recode trial_name
+dl_self$trial_num = dplyr::recode(dl_self$trial_name, 
+                             "GRID_GTS1_1_GTS1" = 1, 
+                             "GRID_GTS1_2_GTS1" = 2,
+                             "GRID_GTS1_3_GTS1" = 3,
+                             "GRID_GTS1_4_GTS1" = 4,
+                             "GRID_GTS1_5_GTS1" = 5)
+
+dl_society$trial_num = dplyr::recode(dl_society$trial_name, 
+                             "GRID_GTS2_1_GTS2" = 1, 
+                             "GRID_GTS2_2_GTS2" = 2,
+                             "GRID_GTS2_3_GTS2" = 3,
+                             "GRID_GTS2_4_GTS2" = 4,
+                             "GRID_GTS2_5_GTS2" = 5)
 ```
 
 ##Fit a mixed effect model
 ```{r}
-m = lmer(climate_tend ~ USHHI2 + USEDU3 + (1|id), dl)
-m %>% summary
-Anova(m, type = 3, test = "F")
+dl_self_test = dl_self[1: 100,] #This datafrmae is just for testing the code
+dl_society_test = dl_society[1: 100,] #This datafrmae is just for testing the code
+m_self = stan_lmer(climate_tend ~ USHHI2 * USEDU3 + 
+                     (1|id) + (1 + USHHI2 * USEDU3|trial_num), data = dl_self_test, 
+               prior_intercept = normal(39, 3),
+               prior = normal(0, 7), 
+               chain = 5, iter = 5000)
+summary(m_self)
+
+m_society = stan_lmer(climate_tend ~ USHHI2 * USEDU3 + 
+                        (1|id) + (1 + USHHI2 * USEDU3|trial_num), 
+                      data = dl_society_test, 
+               prior_intercept = normal(42, 25),
+               prior = normal(0, 7), 
+               chain = 5, iter = 5000)
+summary(m_society)
 ```
+
+##Fit a mixed effect model
+```{r}
+dl_self_test = dl_self[1: 100,] #This datafrmae is just for testing the code
+dl_society_test = dl_society[1: 100,] #This datafrmae is just for testing the code
+m_self = lmer(climate_tend ~ USHHI2 * USEDU3 + 
+                     (1|id) + (1 + USHHI2 * USEDU3|trial_num), data = dl_self_test)
+anova(m_self, type = 3, )
+summary(m_self)
+
+m_society = stan_lmer(climate_tend ~ USHHI2 * USEDU3 + 
+                        (1|id) + (1 + USHHI2 * USEDU3|trial_num), 
+                      data = dl_society_test, 
+               prior_intercept = normal(75, 46),
+               prior = normal(-7, 5), 
+               chain = 5, iter = 5000)
+summary(m_society)
+
+equivalence_test(m_society, range = c(-.01, .01), ci = .90)
+```
+
