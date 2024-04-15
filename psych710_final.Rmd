@@ -14,3 +14,55 @@ The dataset that we have chosen to use is from Sparkman et al. 2022 article, "Am
 
 ## Proposed Analysis
 For sure, we will be using a Bayesian statistic to predict climate policy support from socioeconomic factors which takes into account the repeated measures between the two climate change/policy-related questions with different wording that these surveys were sent out. In our analysis, we will create two composite scores of climate policy support and look for which factor(s) would significantly affect their tendency for climate policy. 
+
+Using blmer to create model?
+
+## Codebook
+### Outcome Variables (1-100)
+
+GRID_GTS1_1_GTS1 : Feel at least somewhat worried about climate change
+
+GRID_GTS1_2_GTS1 : Support of Carbon Tax
+
+GRID_GTS1_3_GTS1 : Support of Renewable Energy
+
+GRID_GTS1_4_GTS1 : Support for 100% sourcing electricity from renewable sources
+
+GRID_GTS1_5_GTS1 : Support for New Green Deal
+
+GRID_GTS2_1_GTS2 : Feel at least somewhat worried about climate change (alternate wording)
+
+GRID_GTS2_2_GTS2 : Support of Carbon Tax (alternative wording)
+
+GRID_GTS2_3_GTS2 : Support of Renewable Energy (alternative wording)
+
+GRID_GTS2_4_GTS2 : Support for 100% sourcing electricity from renewable sources (alternative wording)
+
+GRID_GTS2_5_GTS2 : Support for New Green Deal (alternative wording)
+
+### Predictor Variables (subject to change)
+
+USHHI3 : Household Income
+
+USEDU3 : Highest level of education completed
+
+USMAR2 : Marital Status
+
+
+
+```{r}
+d <- read_csv("full_dataset.csv")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
