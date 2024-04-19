@@ -48,7 +48,7 @@ d_self = d %>% select(id, USHHI2, USEDU3,
 d_society = d %>% select(id, USHHI2, USEDU3,
                        GRID_GTS2_1_GTS2, GRID_GTS2_2_GTS2, GRID_GTS2_3_GTS2, 
                        GRID_GTS2_4_GTS2, GRID_GTS2_5_GTS2)
-dl_self <- d_self %>% as.data.table() %>% data.table::melt(
+dl_self <- d_self %>% data.table::as.data.table() %>% data.table::melt(
   measure.vars =
     list(c('GRID_GTS1_1_GTS1', 'GRID_GTS1_2_GTS1', 'GRID_GTS1_3_GTS1', 
     'GRID_GTS1_4_GTS1', 'GRID_GTS1_5_GTS1')), 
@@ -56,7 +56,7 @@ dl_self <- d_self %>% as.data.table() %>% data.table::melt(
   value.name = "climate_tend"
   ) %>% 
   arrange(id) %>% as.data.frame()
-dl_society <- d_society %>% as.data.table() %>% data.table::melt(
+dl_society <- d_society %>% data.table::as.data.table() %>% data.table::melt(
   measure.vars =
     list(c('GRID_GTS2_1_GTS2', 'GRID_GTS2_2_GTS2', 'GRID_GTS2_3_GTS2', 
     'GRID_GTS2_4_GTS2', 'GRID_GTS2_5_GTS2')), 
@@ -79,6 +79,21 @@ dl_society$trial_num = dplyr::recode(dl_society$trial_name,
                              "GRID_GTS2_3_GTS2" = 3,
                              "GRID_GTS2_4_GTS2" = 4,
                              "GRID_GTS2_5_GTS2" = 5)
+
+dl_self$trial_num = dplyr::recode(dl_self$trial_name, 
+                             "GRID_GTS1_1_GTS1" = 1, 
+                             "GRID_GTS1_2_GTS1" = 2,
+                             "GRID_GTS1_3_GTS1" = 3,
+                             "GRID_GTS1_4_GTS1" = 4,
+                             "GRID_GTS1_5_GTS1" = 5)
+
+dl_society$trial_type = dplyr::recode(dl_society$trial_name, 
+                             contains("GTS2") = "society")
+
+
+dl_self |> mutate(trial_type = case_when(grepl("GTS1", trial_name) ~ "self",
+                                         grepl("GTS2", trial_name) ~ "society"))
+
 ```
 
 ##Fit a mixed effect model
@@ -106,7 +121,7 @@ summary(m_society)
 dl_self_test = dl_self[1: 100,] #This datafrmae is just for testing the code
 dl_society_test = dl_society[1: 100,] #This datafrmae is just for testing the code
 m_self = lmer(climate_tend ~ USHHI2 * USEDU3 + 
-                     (1|id) + (1 + USHHI2 * USEDU3|trial_num), data = dl_self_test)
+                     (1|id) + (1 + USHHI2 * USEDU3|trial_num), data = dl_self)
 anova(m_self, type = 3, )
 summary(m_self)
 
@@ -119,5 +134,17 @@ m_society = stan_lmer(climate_tend ~ USHHI2 * USEDU3 +
 summary(m_society)
 
 equivalence_test(m_society, range = c(-.01, .01), ci = .90)
+```
+
+```{r}
+
+m_self <- lme4::lmer(climate_tend ~ USHHI2 * USEDU3 + (1|id) + (1|trial_num), data = dl_self)
+
+m_society <- lme4::lmer(climate_tend ~ USHHI2 * USEDU3 + (1|id) + (1|trial_num), data = dl_society)
+
+summary(m_self)
+
+summary(m_society)
+
 ```
 

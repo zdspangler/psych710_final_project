@@ -6,16 +6,23 @@ date: "2024-04-10"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(tidyverse)
+library(lme4)
+library(car)
+library(ggplot2)
+library(effects)
+library(psych)
+
 ```
 
 
 ## Background/Hypothesis
-The dataset that we have chosen to use is from Sparkman et al. 2022 article, "Americans experience a false social reality by underestimating popular climate policy support by nearly half." Our research question is How do socioeconomic factors predict green policy ideologies? The data that we have comes from a survey census (Ipsos eNation Omnibus) that utilizes questions for misperception for others' thoughts and behaviors by concerning climate change and support for mitigation policies, comparing with the ground truth of support of climate policies (from Yale's program on Climate Change Communication). The outcome variable, levels of support/more concern for climate policies, were measured twice with different wording. Overall, we predict that individuals' socioeconomic statuses will affect the tendency of changing levels of support/more concern for climate policies. 
+The dataset that we have chosen to use is from Sparkman et al. 2022 article, "Americans experience a false social reality by underestimating popular climate policy support by nearly half." Our research question is How do socioeconomic factors affect green policy ideologies? The data that we have comes from a survey census (Ipsos eNation Omnibus) that utilizes questions for self-perception and misperception for others' thoughts and behaviors by concerning climate change and support for mitigation policies, comparing with the ground truth of support of climate policies (from Yale's program on Climate Change Communication). The outcome variable, levels of perceived support/more concern for climate policies, were measured twice with one group being the self-perception and the other being perception of societal views. Overall, we predict that individuals' socioeconomic statuses will affect the tendency of changing levels of support/more concern for climate policies. We predict that highest level of education completed will have significant interactive effect on the relationship between climate tendencies and perception type.
 
 ## Proposed Analysis
-For sure, we will be using a Bayesian statistic to predict climate policy support from socioeconomic factors which takes into account the repeated measures between the two climate change/policy-related questions with different wording that these surveys were sent out. In our analysis, we will create two composite scores of climate policy support and look for which factor(s) would significantly affect their tendency for climate policy. 
+We will be using lmer to predict the interactive effects of Socioeconomic factors (Education and Income) and Perception type (self and societal) on climate support tendencies. We will be doing an lmer in order to take into account (limited) the repeated measures between the participants and the two groups of climate support questions.  In our analysis, we will be at which socioeconomic factors has a significant interaction on the effect of type of perception on climate support tendencies.
 
-Using blmer to create model?
 
 ## Codebook
 ### Outcome Variables (1-100)
@@ -50,13 +57,154 @@ USMAR2 : Marital Status
 
 
 
+
+## Read in Data
 ```{r}
-d <- read_csv("full_dataset.csv")
+# Read in data
+d <- read.csv('full_dataset.csv')
+
+# Generate an id variable
+d <- tibble::rowid_to_column(d, "id")
+
+```
+
+
+## Clean Data
+```{r}
+d_fit <- d |> select(id, USHHI2, USEDU3, contains("GTS1"), contains("GTS2"))
+
+d_fit <- d_fit |> rename(income = USHHI2, 
+                           education = USEDU3,
+                           quest1_self = GRID_GTS1_1_GTS1,
+                           quest2_self = GRID_GTS1_2_GTS1,
+                           quest3_self = GRID_GTS1_3_GTS1,
+                           quest4_self = GRID_GTS1_4_GTS1,
+                           quest5_self = GRID_GTS1_5_GTS1,
+                           quest1_society = GRID_GTS2_1_GTS2,
+                           quest2_society = GRID_GTS2_2_GTS2,
+                           quest3_society = GRID_GTS2_3_GTS2,
+                           quest4_society = GRID_GTS2_4_GTS2,
+                           quest5_society = GRID_GTS2_5_GTS2)
+
+dl_fit <- d_fit %>% as.data.table() %>% data.table::melt(
+  measure.vars =
+    list(c('quest1_self', 'quest2_self', 'quest3_self', 
+    'quest4_self', 'quest5_self',
+    'quest1_society', 'quest2_society', 'quest3_society', 
+    'quest4_society', 'quest5_society')), 
+  variable.name = "trial_name", 
+  value.name = "climate_tend"
+  ) %>% 
+  arrange(id) %>% as.data.frame()
+
+dl_fit$trial_num = dplyr::recode(dl_fit$trial_name, 
+                             "quest1_self" = 1, 
+                             "quest2_self" = 2,
+                             "quest3_self" = 3,
+                             "quest4_self" = 4,
+                             "quest5_self" = 5, 
+                             "quest1_society" = 1, 
+                             "quest2_society" = 2,
+                             "quest3_society" = 3,
+                             "quest4_society" = 4,
+                             "quest5_society" = 5)
+
+dl_fit <- dl_fit |> mutate(type = case_when(grepl("self", trial_name) ~ 0,
+                                         grepl("society", trial_name) ~ 1))
 
 
 ```
 
 
+## Fitting Compact and Augmented models
+```{r}
+# Compact models
+m_edu_int_c <- lmer(climate_tend ~ education + type + (1 + type|id) + (1|trial_num), data = dl_fit)
+
+m_inc_int_c <- lmer(climate_tend ~ income + type + (1 + type|id) + (1|trial_num), data = dl_fit)
+
+
+#Education * type
+# Tried adding education to (1|trial_nun), but results in failing to converge
+m_edu_type = 
+  lmer(climate_tend ~ education * type + (1 + type|id) + (1|trial_num), data = dl_fit)
+summary(m_edu_type)
+# Anova(m_edu_type, type = 3, test = "F")
+anova(m_edu_type, m_edu_int_c)
+
+
+#Income * type
+m_incom_type = 
+  lmer(climate_tend ~ income * type + (1 + type|id) + (1|trial_num), data = dl_fit)
+summary(m_incom_type)
+# Anova(m_incom_type, type = 3, test = "F")
+anova(m_incom_type, m_inc_int_c)
+
+```
+
+## Visualizations
+```{r}
+dl_fit$type_la <- dplyr::recode(dl_fit$type, "0" = "self", "1" = "society")
+
+edu_graph <- lmer(climate_tend ~ education * type_la + (1 + type_la|id) + (1|trial_num), data = dl_fit)
+
+edu_plot <- as.data.frame(effect('education:type_la', 
+                               edu_graph, 
+                               xlevels = 
+                                 list(type_la = c("self", "society"),
+                                      education = seq(min(dl_fit$education), max(dl_fit$education), 
+                                                  length = 100))))
+
+ggplot(dl_fit, aes(x = education, y = climate_tend, color = type_la)) +
+  geom_smooth(data = edu_plot, stat = "identity",
+              aes(y = fit, ymin = lower + se, ymax = upper - se)) + 
+  # geom_point(aes(), alpha = .4) +
+  labs(x = "Highest Level of Education Completed", y = "Support of Climate Policies", title = "Climate Policy predicted by Education level completion", color = "Type of Perception") +
+  theme_bw() +
+  xlim(1,13) +
+  ylim(30,50) +
+  scale_x_continuous(breaks = c(1,7,13)) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+    #legend.position = c(0.12, 0.88)
+  )
+
+```
+
+```{r}
+inc_graph <- lmer(climate_tend ~ income * type_la + (1 + type_la|id) + (1|trial_num), data = dl_fit)
+
+inc_plot <- as.data.frame(effect('income:type_la', 
+                               inc_graph, 
+                               xlevels = 
+                                 list(type_la = c("self", "society"),
+                                      income = seq(min(dl_fit$income), max(dl_fit$income), 
+                                                  length = 100))))
+
+ggplot(dl_fit, aes(x = income, y = climate_tend, color = type_la)) +
+  geom_smooth(data = inc_plot, stat = "identity",
+              aes(y = fit, ymin = lower + se, ymax = upper - se)) +
+  #xlim = (1, 25) +
+  labs(x = "Income Level", y = "Support of Climate Policies", title = "Climate Policy predicted by Income level", color = "Type of Perception") +
+  theme_bw() +
+  xlim(1, 23) +
+  ylim(30, 50) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    #legend.position = c(0.12, 0.88)
+  )
+
+```
+
+
+## Results
+
+We did not find a significant effect of interaction between education and perception type, b = 0.117, Chisq = 2.515, p = .113.
+
+We did find a significant effect of interaction between income and perception type, b = 0.100, Chisq = 12.79, p > .0005.
 
 
 
