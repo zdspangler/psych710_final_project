@@ -1,0 +1,103 @@
+---
+title: "psych710_final"
+output: html_document
+date: "2024-04-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(tidyverse)
+library(lme4)
+library(car)
+library(ggplot2)
+library(effects)
+library(psych)
+library(emmeans)
+library(ggeffects)
+library(bridgesampling)
+library(bayestestR)
+library(bayesplot)
+library(rstanarm)
+library(rstantools)
+source("610710_functions.R")
+```
+# Data Analysis
+
+##Read data, generate composite scores
+```{r}
+d = read.csv('full_dataset.csv') #Read data
+
+#Generate an id variable
+d = tibble::rowid_to_column(d, "id")
+```
+
+##Clean data: 
+```{r}
+#Select data
+self_quest = c("GRID_GTS1_1_GTS1", "GRID_GTS1_2_GTS1", 
+               "GRID_GTS1_3_GTS1", "GRID_GTS1_4_GTS1", "GRID_GTS1_5_GTS1")
+society_quest = c("GRID_GTS2_1_GTS2", "GRID_GTS2_2_GTS2",
+                  "GRID_GTS2_3_GTS2", "GRID_GTS2_4_GTS2", "GRID_GTS2_5_GTS2")
+
+d$comp_self = varScore(d, self_quest, 
+                          Range=c(0, 100), MaxMiss=3/4, Prorate=T) / 5 
+d$comp_soc = varScore(d, society_quest, 
+                          Range=c(0, 100), MaxMiss=3/4, Prorate=T) / 5 
+
+d_fit = d %>% select(id, USHHI2, USEDU3, comp_self, comp_soc)
+d_fit$diff = d_fit$comp_self - d_fit$comp_soc
+
+#Rename variables
+##Household income(USHHI2, I guess the codebook put it wrong)
+##Education level(USEDU3)
+d_fit = d_fit %>% rename(income = USHHI2, education = USEDU3)
+```
+
+##Fit a model
+```{r}
+m = stan_glm(diff ~ income * education, data = d_fit, 
+             family = gaussian("identity"), 
+             chains = 5, iter = 20000)
+
+#The estimates for:
+#   income, a 95% prob that true value is between -0.19~0.29, is most likely 0.1;
+#   education, a 95% prob that true value is between -0.16~0.54, is most likely 0.2;
+#   income:education, a 95% prob that true value is between -0.043~0.009, is most likely 0.0.
+#   The standard deviation is 12.2~12.7.
+summary(m)
+prior_summary(m)
+round(posterior_interval(m, prob = 0.95), 3)
+
+#Comparison between posterior & prior
+posterior_vs_prior(m, pars = 'income:education')
+
+#Visualizing posterior
+posterior <- as.matrix(m)
+mcmc_areas(posterior,
+           pars = 'income:education',
+           prob = 0.95)
+
+#Bayes factor
+bayesfactor_parameters(m)
+
+#0.41% intercept is inside this region, so less likely to be 0.
+#6.43% income and 2.73% education are inside this region.
+#28.48% of interaction is inside this region, very likely to be 0.
+equivalence_test(m, range = c(-.01, .01), ci = .90)
+
+#The prob to have effect greater than 0 is 66.4%.
+mean(posterior[, 2] > 0)
+
+#Diagnostics
+launch_shinystan(m)
+```
+
+#Result
+  From the paper, it states that there is a discrepancy between self perception and societal perception and an underestimation of societal perception on climate policies in the US. We predict that the difference between self & societal perceptions is moderated by socioeconomic factors, which are income & education.
+  We ran a Bayesian model where the difference between self & societal perceptions regresses on income & education with a non-informative prior. The result suggests an intercept 1.3, 95% credible interval [-1.66~4.20], coefficient 0.1 for income, 95% credible interval [-0.18~0.28], coefficient 0.2 for education, 95% credible interval [-0.16~0.54], and coefficient 0.0 for interaction term, 95% credible interval [-0.04~0.01]. The Bayes factors against the hypothesis, where each coefficient is 0, suggest most likely the there is no effect of socioeconomic status on perception difference. However, the probability of having effect greater than 0 is 66.5%. The Region of Practical Equivalence (ROPE) shows a high possibility that interaction would fall in the interval between -.01 and .01 (27.92%). Nonetheless, the income and education have possibility of 6.8% & 2.9%, respectively, falling in this interval.
+  To conclude, according to the results above, we think highly possible there is no interaction of socioeconomic effect on self/societal difference and in favor of an effect of income or education individually.
