@@ -25,6 +25,7 @@ library(bayesplot)
 library(rstanarm)
 library(rstantools)
 source("610710_functions.R")
+
 ```
 # Data Analysis
 
